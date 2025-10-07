@@ -33,7 +33,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.11"
-  BOOK_DIR: "2025_AMPH_JHU"   # <--- change to your book directory
+  BOOK_DIR: "."   # <--- change to your book directory
 
 jobs:
   build:
