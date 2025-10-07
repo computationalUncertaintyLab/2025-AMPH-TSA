@@ -1,0 +1,7 @@
+# Table of contents
+# Learn more at https://jupyterbook.org/customize/toc.html
+
+format: jb-book
+root: intro
+chapters:
+- file: 2025-10-16-AMPH.ipynb
