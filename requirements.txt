@@ -1,0 +1,8 @@
+jupyter-book
+matplotlib
+numpy
+pandas
+epiweeks
+matplotlib
+delphi_epidata
+statsmodels
