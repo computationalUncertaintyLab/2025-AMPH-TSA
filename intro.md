@@ -1,6 +1,6 @@
 # 2025-10-14 AMPH, Time Series Forecasting
 
-thomas mcandrew   
+thomas mcandrew    
 Associate Professor   
 mcandrew@lehigh.edu   
 Website=[https://compuncertlab.org/](https://compuncertlab.org/)   
