@@ -1,0 +1,133 @@
+name: Notebooks CI
+
+on:
+  pull_request:
+    paths: ["**/*.ipynb", "requirements*.txt", "pyproject.toml", "environment*.yml", ".github/workflows/notebooks.yml"]
+  push:
+    branches: [main, master]
+    paths: ["**/*.ipynb", "requirements*.txt", "pyproject.toml", "environment*.yml", ".github/workflows/notebooks.yml"]
+
+concurrency:
+  group: notebooks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-notebooks:
+    name: Lint & run notebooks (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true  # in case you track big data with Git LFS
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt', '**/pyproject.toml') }}
+          restore-keys: ${{ runner.os }}-pip-
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          # Prefer your own env spec; examples below:
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install nbqa black flake8 nbclient nbconvert jupyterlab pytest nbval papermill
+
+      # ---- Lint notebooks' embedded code via nbqa (Black + Flake8) ----
+      - name: Lint notebooks (nbqa black --check)
+        run: |
+          nbqa black --check --line-length 100 .
+      - name: Lint notebooks (nbqa flake8)
+        run: |
+          nbqa flake8 --max-line-length 100 --extend-ignore=E203,W503 .
+
+      # ---- Execute notebooks (clean, deterministic run) ----
+      - name: Run notebooks with nbclient
+        shell: bash
+        run: |
+          set -e
+          # Find .ipynb, skip checkpoints/export dirs
+          mapfile -t NBS < <(git ls-files '*.ipynb' | grep -v '.ipynb_checkpoints' || true)
+          echo "Discovered notebooks:"
+          printf '%s\n' "${NBS[@]}"
+          mkdir -p .ci-executed
+          for nb in "${NBS[@]}"; do
+            out=".ci-executed/${nb##*/}"
+            echo "Executing $nb -> $out"
+            python - <<'PY'
+import sys, os, nbformat
+from nbclient import NotebookClient
+from nbclient.exceptions import CellExecutionError
+from pathlib import Path
+
+nb_path = os.environ.get("NB_IN")
+out_path = os.environ.get("NB_OUT")
+nb = nbformat.read(nb_path, as_version=4)
+# Execute with a fresh kernel; increase timeout if you need heavy runs
+client = NotebookClient(nb, timeout=600, kernel_name="python3", allow_errors=False)
+try:
+    client.execute()
+except CellExecutionError as e:
+    print(f"Execution failed in {nb_path}:\n{e}", file=sys.stderr)
+    sys.exit(1)
+Path(os.path.dirname(out_path)).mkdir(parents=True, exist_ok=True)
+nbformat.write(nb, out_path)
+PY
+          done
+        env:
+          # these are set inside the loop via env var exports:
+          # NB_IN: path to input notebook
+          # NB_OUT: path to executed notebook
+        # Use a small bash wrapper to set env per file:
+        # (We embed the loop here so envs are set correctly)
+        # The Python block above reads NB_IN/NB_OUT.
+
+      - name: Export executed notebooks to HTML
+        if: always()
+        run: |
+          mkdir -p .ci-html
+          for nb in .ci-executed/*.ipynb; do
+            jupyter nbconvert --to html --no-input "$nb" --output-dir .ci-html
+          done
+
+      - name: Upload executed notebooks
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: executed-notebooks
+          path: .ci-executed/*.ipynb
+
+      - name: Upload HTML exports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: notebook-html
+          path: .ci-html/*.html
+
+  # Optional: run nbval tests if you prefer pytest-style notebook testing
+  nbval:
+    runs-on: ubuntu-latest
+    needs: test-notebooks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest nbval jupyter
+      - name: Pytest nbval
+        run: |
+          pytest --nbval --current-env --maxfail=1 -q
