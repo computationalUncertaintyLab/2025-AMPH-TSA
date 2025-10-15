@@ -6,3 +6,4 @@ epiweeks
 matplotlib
 delphi_epidata
 statsmodels
+scipy
