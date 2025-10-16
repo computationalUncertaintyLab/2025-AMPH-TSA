@@ -5,4 +5,5 @@ format: jb-book
 root: intro
 chapters:
 - file: 2025-10-16-AMPH.ipynb
+  title: Time series forecasting applied to infectious diseases
 - file: contact.md
